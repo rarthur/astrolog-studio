@@ -424,6 +424,42 @@ bool CityForZone(const std::string &zoneName, City *out) {
   return true;
 }
 
+bool NearestCity(double lat, double lon, double maxKm, City *out) {
+  if (!g_init || is.rgae == NULL)
+    return false;
+  const double rad = M_PI / 180.0;
+  int best = -1;
+  double bestKm = maxKm;
+  for (int iae = 0; iae < is.cae; iae++) {
+    const AtlasEntry &ae = is.rgae[iae];
+    // Great-circle distance (haversine). Atlas longitudes are west positive.
+    double dLat = (ae.lat - lat) * rad, dLon = (-ae.lon - lon) * rad;
+    double h = std::sin(dLat / 2) * std::sin(dLat / 2) + std::cos(lat * rad) *
+      std::cos(ae.lat * rad) * std::sin(dLon / 2) * std::sin(dLon / 2);
+    double km = 2 * 6371.0 * std::asin(std::min(1.0, std::sqrt(h)));
+    if (km < bestKm) {
+      bestKm = km;
+      best = iae;
+    }
+  }
+  if (best < 0)
+    return false;
+  const AtlasEntry &ae = is.rgae[best];
+  out->display = ToUtf8(SzCity(best));
+  out->lon = -ae.lon;
+  out->lat = ae.lat;
+  out->zoneIndex = ae.izn;
+  out->zoneName = ae.izn >= 0 ? ToUtf8(rgszzn[ae.izn]) : "";
+  return true;
+}
+
+int ZoneIndex(const std::string &zoneName) {
+  for (int izn = 0; izn < iznMax; izn++)
+    if (zoneName == rgszzn[izn])
+      return izn;
+  return -1;
+}
+
 bool ResolveZone(BirthData &bd) {
   if (!g_init || bd.zoneIndex < 0 || !FEnsureTimezoneChanges())
     return false;

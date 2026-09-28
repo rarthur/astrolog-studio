@@ -150,6 +150,7 @@ struct App {
   guint recastSource = 0;
   guint searchSource = 0;
   bool pointerInCityPop = false;
+  bool startNow = false;  // --now: open with a chart for this moment, here.
   std::string lastTheme;
 };
 
@@ -482,7 +483,9 @@ void LoadIntoForm(const BirthData &b) {
   Recast();
 }
 
-void SetNow() {
+// Set only the date and time fields to the current moment (the sidebar clock
+// button), keeping the rest of the chart as entered.
+void SetTimeNow() {
   GDateTime *now = g_date_time_new_now_local();
   A.loading = true;
   gtk_spin_button_set_value(A.year, g_date_time_get_year(now));
@@ -494,6 +497,92 @@ void SetNow() {
   A.loading = false;
   g_date_time_unref(now);
   Recast();
+}
+
+// The system's IANA time zone, e.g. "America/Detroit".
+std::string SystemZone() {
+  const char *tz = g_getenv("TZ");
+  if (tz && *tz && *tz != ':') return tz;
+  gchar *link = g_file_read_link("/etc/localtime", nullptr);
+  std::string s = link ? link : "";
+  g_free(link);
+  size_t p = s.find("zoneinfo/");
+  return p == std::string::npos ? "" : s.substr(p + 9);
+}
+
+// Where "now" is. Omarchy's weather location
+// (~/.local/state/omarchy/settings/weather.json, set with
+// `omarchy weather location`) gives exact coordinates; otherwise use the
+// largest atlas city in the system time zone. The time zone is always the
+// system's, since that is the clock "now" is read from. No network lookups.
+void CurrentPlace(BirthData *b) {
+  std::string zone = SystemZone();
+  City c;
+  bool have = false;
+  std::string file = std::string(g_get_home_dir()) +
+    "/.local/state/omarchy/settings/weather.json";
+  gchar *text = nullptr;
+  if (g_file_get_contents(file.c_str(), &text, nullptr, nullptr)) {
+    // Tiny reader for the flat {"name", "latitude", "longitude"} object.
+    auto field = [&](const char *key) -> std::string {
+      std::string t = text, k = std::string("\"") + key + "\"";
+      size_t p = t.find(k);
+      if (p == std::string::npos) return "";
+      p = t.find(':', p);
+      if (p == std::string::npos) return "";
+      p = t.find_first_not_of(" \t\n", p + 1);
+      if (p == std::string::npos) return "";
+      if (t[p] == '"') {
+        size_t e = t.find('"', p + 1);
+        return e == std::string::npos ? "" : t.substr(p + 1, e - p - 1);
+      }
+      size_t e = t.find_first_of(",}\n", p);
+      return t.substr(p, e - p);
+    };
+    std::string lat = field("latitude"), lon = field("longitude");
+    std::string name = field("name");
+    if (!lat.empty() && !lon.empty()) {
+      c.lat = g_ascii_strtod(lat.c_str(), nullptr);
+      c.lon = g_ascii_strtod(lon.c_str(), nullptr);
+      City near;
+      // Use the atlas name (with region and country) if a city is close by.
+      if (astro::NearestCity(c.lat, c.lon, 15.0, &near))
+        c.display = near.display;
+      else
+        c.display = name.empty() ? "Current location" : name;
+      have = true;
+    }
+    g_free(text);
+  }
+  if (!have && !astro::CityForZone(zone, &c)) {
+    c.display = "Greenwich, United Kingdom";
+    c.lat = 51.4779;
+    c.lon = -0.0015;
+    zone = "Europe/London";
+  }
+  b->location = c.display;
+  b->lat = c.lat;
+  b->lon = c.lon;
+  b->zoneName = zone;
+  b->zoneIndex = astro::ZoneIndex(zone);
+}
+
+// Cast a chart for this moment, here: named "Now", at the current location
+// and time zone.
+void CastNow() {
+  BirthData b;
+  b.name = "Now";
+  CurrentPlace(&b);
+  GDateTime *now = g_date_time_new_now_local();
+  b.year = g_date_time_get_year(now);
+  b.month = g_date_time_get_month(now);
+  b.day = g_date_time_get_day_of_month(now);
+  b.hour = g_date_time_get_hour(now);
+  b.minute = g_date_time_get_minute(now);
+  b.second = g_date_time_get_second(now);
+  b.utcOffset = g_date_time_get_utc_offset(now) / 3.6e9;  // Fallback only.
+  g_date_time_unref(now);
+  LoadIntoForm(b);
 }
 
 // ---------------------------------------------------------------------------
@@ -1357,9 +1446,9 @@ GtkWidget *BuildSidebar() {
   gtk_box_append(GTK_BOX(time), Label(":", "muted"));
   gtk_box_append(GTK_BOX(time), GTK_WIDGET(A.second));
   GtkWidget *now = gtk_button_new_from_icon_name("astrolog-now-symbolic");
-  gtk_widget_set_tooltip_text(now, "Set to the current moment (Ctrl+N)");
+  gtk_widget_set_tooltip_text(now, "Use the current date and time");
   g_signal_connect(now, "clicked", CB(+[](GtkButton *, gpointer) {
-    SetNow();
+    SetTimeNow();
   }), nullptr);
   gtk_box_append(GTK_BOX(time), now);
   gtk_box_append(GTK_BOX(box), Field("Local time (24h)", time));
@@ -1851,7 +1940,7 @@ void BuildWindow(GtkApplication *app) {
     SaveCurrent();
   }));
   gtk_box_append(GTK_BOX(menu), MenuItem("Cast for now", "Ctrl+N", [] {
-    SetNow();
+    CastNow();
   }));
   gtk_box_append(GTK_BOX(menu), MenuItem("Find a city", "Ctrl+L", [] {
     gtk_revealer_set_reveal_child(A.sidebar, TRUE);
@@ -1887,7 +1976,7 @@ void BuildWindow(GtkApplication *app) {
   gtk_widget_add_css_class(nowBtn, "flat");
   gtk_widget_set_tooltip_text(nowBtn, "Cast for now (Ctrl+N)");
   g_signal_connect(nowBtn, "clicked", CB(+[](GtkButton *, gpointer) {
-    SetNow();
+    CastNow();
   }), nullptr);
   gtk_header_bar_pack_end(GTK_HEADER_BAR(hb), nowBtn);
   gtk_window_set_titlebar(A.win, hb);
@@ -1971,7 +2060,7 @@ void BuildWindow(GtkApplication *app) {
   AddShortcut(S, "<Control>s", +[](GtkWidget *, GVariant *, gpointer) -> gboolean {
     SaveCurrent(); return TRUE; });
   AddShortcut(S, "<Control>n", +[](GtkWidget *, GVariant *, gpointer) -> gboolean {
-    SetNow(); return TRUE; });
+    CastNow(); return TRUE; });
   AddShortcut(S, "<Control>l", +[](GtkWidget *, GVariant *, gpointer) -> gboolean {
     gtk_revealer_set_reveal_child(A.sidebar, TRUE);
     gtk_widget_grab_focus(GTK_WIDGET(A.city)); return TRUE; });
@@ -2056,30 +2145,11 @@ void Activate(GtkApplication *app, gpointer) {
   A.saved = store::LoadCharts();
   RefreshSaved();
 
-  if (A.prefs.haveLast) {
+  if (A.prefs.haveLast && !A.startNow) {
     LoadIntoForm(A.prefs.last);
   } else {
-    // First run: this moment, at the biggest city in the system time zone.
-    BirthData b;
-    b.name = "Now";
-    gchar *link = g_file_read_link("/etc/localtime", nullptr);
-    std::string tz = link ? link : "";
-    g_free(link);
-    size_t p = tz.find("zoneinfo/");
-    City c;
-    if (p != std::string::npos && astro::CityForZone(tz.substr(p + 9), &c)) {
-      b.location = c.display;
-      b.lat = c.lat;
-      b.lon = c.lon;
-      b.zoneIndex = c.zoneIndex;
-      b.zoneName = c.zoneName;
-    } else {
-      b.location = "Greenwich, United Kingdom";
-      b.lat = 51.4779;
-      b.lon = -0.0015;
-    }
-    LoadIntoForm(b);
-    SetNow();
+    // First run: a chart for this moment, here.
+    CastNow();
   }
   ShowPage(A.prefs.page);
   if (const char *pg = g_getenv("ASTROLOG_STUDIO_SNAPSHOT_PAGE"))
@@ -2144,6 +2214,16 @@ int main(int argc, char **argv) {
   // command line program. Reports are generated this way in a subprocess.
   if (argc > 1 && strcmp(argv[1], "--cli") == 0)
     return astro::RunCli(argc - 1, argv + 1);
+
+  // --now opens with a chart for the current moment at the current location
+  // (handy for a desktop keybinding). Strip it before GTK sees the args.
+  for (int i = 1; i < argc; i++)
+    if (strcmp(argv[i], "--now") == 0) {
+      A.startNow = true;
+      for (int j = i; j < argc - 1; j++) argv[j] = argv[j + 1];
+      argc--;
+      break;
+    }
 
   std::string data = FindDataDir(argv[0]);
   std::string err;

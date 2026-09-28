@@ -106,6 +106,10 @@ std::vector<City> SearchCities(const std::string &query, int maxResults);
 // The most prominent atlas city in an IANA time zone (e.g. the system's
 // /etc/localtime zone), used to pick a sensible default location.
 bool CityForZone(const std::string &zoneName, City *out);
+// The atlas city nearest to a point, if one lies within maxKm.
+bool NearestCity(double lat, double lon, double maxKm, City *out);
+// Astrolog's index for an IANA time zone name, or -1 if unknown.
+int ZoneIndex(const std::string &zoneName);
 // Given zoneIndex and the local date/time in bd, determine the standard
 // offset and daylight saving in effect then (from Astrolog's time zone
 // history database). Returns false if unavailable.

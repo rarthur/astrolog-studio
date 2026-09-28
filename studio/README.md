@@ -25,6 +25,14 @@ also act as the classic CLI: `./astrolog-studio --cli -qa 7 4 1990 14:30 ...`.
   time zone history, falling back to Local Mean Time before standard time
   existed. Manual offset and LMT modes are also available.
 - **Live recasting**: every edit recasts the chart instantly.
+- **Cast for now** (Ctrl+N, the clock button in the header, or
+  `astrolog-studio --now`): opens a chart titled "Now" for this moment at
+  your current location. The location comes from Omarchy's weather setting
+  (`omarchy weather location`, stored in
+  `~/.local/state/omarchy/settings/weather.json`); without it, the largest
+  city in your system time zone is used. The time zone is the system's. No
+  network lookups are made. The clock button next to the time fields only
+  sets the date and time of the chart you're editing.
 - **Wheel**: zodiac, houses, angles and aspect lines drawn in your theme's
   colors. Hover a planet (on the wheel or in the list) to trace its aspects.
   Toggle *Transits* to add an outer ring showing the sky right now.
