@@ -75,6 +75,18 @@ F9 toggle sidebar, Ctrl+Q quit.
   `ASTROLOG_STUDIO_THEME_STATE` can point at another directory containing
   `theme/colors.toml` and `theme.name`.
 
+## Screenshots without a display
+
+`ASTROLOG_STUDIO_SNAPSHOT=out.png` makes a separate, throwaway instance save
+an image of its window and quit; it never touches saved preferences.
+`ASTROLOG_STUDIO_SNAPSHOT_PAGE=0…4` picks the view. Combined with GTK's
+headless Broadway backend this needs no visible window:
+
+```sh
+gtk4-broadwayd :5 &
+GDK_BACKEND=broadway BROADWAY_DISPLAY=:5 ASTROLOG_STUDIO_SNAPSHOT=wheel.png ./astrolog-studio
+```
+
 ## Layout of the code
 
 | File | Purpose |
