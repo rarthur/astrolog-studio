@@ -5,7 +5,7 @@ A modern GTK 4 desktop interface for **[Astrolog](https://www.astrolog.org/astro
 own calculation engine, atlas and reports, and matches the look of the
 [Omarchy](https://omarchy.org) desktop, including live theme switching.
 
-![Astrolog Studio: hiding the sidebar, hovering placements to trace their aspects, and cycling through the stock Omarchy themes](docs/demo.gif)
+![Astrolog Studio: touring the Wheel, Positions, Aspects, Balance and Reports views, hiding the sidebar, hovering placements to trace their aspects, and cycling through the stock Omarchy themes](docs/demo.gif)
 
 > **This is an unofficial, modified version of Astrolog.** It is not made,
 > endorsed or supported by Walter D. Pullen. Please don't send him reports
