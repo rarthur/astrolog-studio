@@ -40,7 +40,8 @@ also act as the classic CLI: `./astrolog-studio --cli -qa 7 4 1990 14:30 ...`.
   `~/.local/share/astrolog-studio/`.
 
 Options: all 40 Astrolog house systems, tropical/sidereal zodiac, asteroids,
-sensitive points, minor aspects, and true/mean node.
+sensitive points, minor aspects, true/mean node, and a text size setting
+(Small, Default, Large, Extra large) that scales the whole interface.
 
 Shortcuts: Ctrl+S save, Ctrl+N now, Ctrl+L find city, Ctrl+1…5 switch views,
 F9 toggle sidebar, Ctrl+Q quit.
@@ -65,6 +66,18 @@ F9 toggle sidebar, Ctrl+Q quit.
 - Without Omarchy, a built-in Tokyo Night style palette is used.
   `ASTROLOG_STUDIO_THEME_STATE` can point at another directory containing
   `theme/colors.toml` and `theme.name`.
+
+## Screenshots without a display
+
+`ASTROLOG_STUDIO_SNAPSHOT=out.png` makes a separate, throwaway instance save
+an image of its window and quit; it never touches saved preferences.
+`ASTROLOG_STUDIO_SNAPSHOT_PAGE=0…4` picks the view. Combined with GTK's
+headless Broadway backend this needs no visible window:
+
+```sh
+gtk4-broadwayd :5 &
+GDK_BACKEND=broadway BROADWAY_DISPLAY=:5 ASTROLOG_STUDIO_SNAPSHOT=wheel.png ./astrolog-studio
+```
 
 ## Layout of the code
 

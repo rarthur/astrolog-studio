@@ -269,7 +269,8 @@ void DrawWheel(cairo_t *cr, int width, int height, const Chart &c,
   double rZo = base, rZi = base * 0.86;       // Zodiac ring.
   double rHi = base * 0.79;                   // House number ring.
   double rA = base * 0.40;                    // Aspect circle.
-  double glyph = std::clamp(base * 0.095, 15.0, 36.0);
+  double ts = theme::TextScale();
+  double glyph = std::clamp(base * 0.095 * ts, 15.0 * ts, 38.0 * ts);
   double rGlyph = rHi - glyph * 0.95;
   double rLabel = rGlyph - glyph * 1.15;  // Degree label block; ℞ inside.
 
@@ -482,7 +483,8 @@ void DrawAspectGrid(cairo_t *cr, int width, int height, const Chart &c,
   if (n == 0) return;
   double cell = std::floor(std::min((width - 16.0) / (n + 0.5),
     (height - 16.0) / (n + 0.5)));
-  cell = std::clamp(cell, 30.0, 52.0);
+  double ts = theme::TextScale();
+  cell = std::clamp(cell, 30.0 * ts, 56.0 * ts);
   st.cell = cell;
   st.originX = std::floor((width - cell * n) / 2.0);
   st.originY = std::floor((height - cell * n) / 2.0);
@@ -569,6 +571,11 @@ void DrawBalance(cairo_t *cr, int width, int height, const Chart &c) {
     if (b.retro) { retro++; retroG += b.glyph + " "; }
   }
   if (total <= 0) return;
+
+  // The balance view is laid out in fixed units; scale it as a whole.
+  double ts = theme::TextScale();
+  cairo_scale(cr, ts, ts);
+  width = (int)(width / ts);
 
   double pad = 24;
   double colW = std::min(760.0, width - pad * 2);

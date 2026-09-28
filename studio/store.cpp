@@ -120,6 +120,8 @@ Prefs LoadPrefs() {
       p.wheelPanel = g_key_file_get_integer(kf, g, "wheel_panel", nullptr);
     if (g_key_file_has_key(kf, g, "aspect_panel", nullptr))
       p.aspectPanel = g_key_file_get_integer(kf, g, "aspect_panel", nullptr);
+    if (g_key_file_has_key(kf, g, "text_size", nullptr))
+      p.textSize = g_key_file_get_integer(kf, g, "text_size", nullptr);
     p.haveLast = ReadBirth(kf, "last", &p.last);
   }
   g_key_file_free(kf);
@@ -141,6 +143,7 @@ void SavePrefs(const Prefs &p) {
   g_key_file_set_integer(kf, g, "sidebar_width", p.sidebarWidth);
   g_key_file_set_integer(kf, g, "wheel_panel", p.wheelPanel);
   g_key_file_set_integer(kf, g, "aspect_panel", p.aspectPanel);
+  g_key_file_set_integer(kf, g, "text_size", p.textSize);
   if (p.haveLast) WriteBirth(kf, "last", p.last);
   std::string path = Dir() + "/prefs.ini";
   g_key_file_save_to_file(kf, path.c_str(), nullptr);

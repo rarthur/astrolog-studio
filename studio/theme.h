@@ -62,6 +62,12 @@ Rgb ElementColor(int element);  // 0 fire, 1 earth, 2 air, 3 water
 Rgb AspectColor(int type);
 Rgb BodyColor(int id);
 
+// Text size multiplier for the whole interface (CSS, glyph widgets and the
+// Cairo-drawn views). The user setting (e.g. 1.0 or 1.15) is applied on top
+// of a base enlargement.
+double TextScale();
+void SetTextScale(double userScale);  // Restyles the app immediately.
+
 // Font family list to use for astrological glyphs.
 std::string GlyphFamily();
 

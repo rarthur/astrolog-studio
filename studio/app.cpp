@@ -104,6 +104,7 @@ struct App {
   GtkDropDown *house = nullptr, *zodiac = nullptr;
   GtkSwitch *asteroids = nullptr, *points = nullptr, *minor = nullptr,
     *trueNode = nullptr, *transits = nullptr;
+  GtkDropDown *textSize = nullptr;
 
   // Library.
   GtkListBox *savedList = nullptr;
@@ -191,6 +192,7 @@ struct GlyphData {
 
 GtkWidget *GlyphW(const std::string &glyph, const theme::Rgb &color,
   double px) {
+  px *= theme::TextScale();
   auto *d = new GlyphData{glyph, color, px};
   bool text = !glyph.empty() && (unsigned char)glyph[0] < 0x80;
   GtkWidget *da = gtk_drawing_area_new();
@@ -370,6 +372,8 @@ std::string ZoneSummary(const BirthData &b) {
 void ScheduleRecast();
 void Recast();
 void UpdateViews();
+void ApplyTextSize();
+void SchedulePrefsSave();
 
 BirthData ReadForm(std::string *error) {
   BirthData b;
@@ -1066,9 +1070,10 @@ void SavePrefsNow() {
     g_source_remove(A.prefsSource);
     A.prefsSource = 0;
   }
-  if (!A.house) return;
+  if (!A.house || g_getenv("ASTROLOG_STUDIO_SNAPSHOT")) return;
   A.prefs.settings = ReadSettings();
   A.prefs.transits = gtk_switch_get_active(A.transits);
+  A.prefs.textSize = (int)gtk_drop_down_get_selected(A.textSize);
   if (A.narrow == 0) {
     if (A.wheelPaneSet && gtk_widget_get_width(A.wheelSide) > 0)
       A.prefs.wheelPanel = gtk_widget_get_width(A.wheelSide) + 8;
@@ -1099,8 +1104,11 @@ void UpdateViews() {
   gtk_widget_queue_draw(GTK_WIDGET(A.wheel));
   // The grid never shrinks below readable cells; it scrolls instead.
   int n = (int)A.chart.bodies.size();
-  gtk_drawing_area_set_content_width(A.grid, n * 31 + 16);
-  gtk_drawing_area_set_content_height(A.grid, n * 31 + 16);
+  int cellMin = (int)std::ceil(31 * theme::TextScale());
+  gtk_drawing_area_set_content_width(A.grid, n * cellMin + 16);
+  gtk_drawing_area_set_content_height(A.grid, n * cellMin + 16);
+  gtk_drawing_area_set_content_height(A.balance,
+    (int)(620 * theme::TextScale()));
   gtk_widget_queue_draw(GTK_WIDGET(A.grid));
   gtk_widget_queue_draw(GTK_WIDGET(A.balance));
   const char *page = gtk_stack_get_visible_child_name(A.stack);
@@ -1109,6 +1117,14 @@ void UpdateViews() {
   A.prefs.last = A.current;
   A.prefs.haveLast = true;
   SchedulePrefsSave();
+}
+
+// Text size setting: restyle and rebuild the glyph widgets at the new size.
+void ApplyTextSize() {
+  static const double kScales[] = {0.9, 1.0, 1.15, 1.3};
+  int i = std::clamp((int)gtk_drop_down_get_selected(A.textSize), 0, 3);
+  theme::SetTextScale(kScales[i]);
+  if (A.chart.ok) UpdateViews();
 }
 
 // ---------------------------------------------------------------------------
@@ -1474,6 +1490,17 @@ GtkWidget *BuildSidebar() {
     "Quincunx, semisextile, quintiles…", &A.minor));
   gtk_box_append(GTK_BOX(box), SwitchRow("True node", "Instead of mean node",
     &A.trueNode));
+  const char *sizes[] = {"Small", "Default", "Large", "Extra large", nullptr};
+  A.textSize = GTK_DROP_DOWN(gtk_drop_down_new_from_strings(sizes));
+  gtk_drop_down_set_selected(A.textSize, 1);
+  g_signal_connect(A.textSize, "notify::selected", CB(+[](GObject *,
+    GParamSpec *, gpointer) {
+    ApplyTextSize();
+    if (!A.loading) SchedulePrefsSave();
+  }), nullptr);
+  GtkWidget *ts = Field("Text size", GTK_WIDGET(A.textSize));
+  gtk_widget_set_margin_top(ts, 8);
+  gtk_box_append(GTK_BOX(box), ts);
   for (GtkSwitch *s : {A.transits, A.asteroids, A.points, A.minor, A.trueNode})
     g_signal_connect(s, "notify::active", G_CALLBACK(OnFormNotify), nullptr);
 
@@ -2021,6 +2048,8 @@ void Activate(GtkApplication *app, gpointer) {
   gtk_switch_set_active(A.points, s.points);
   gtk_switch_set_active(A.minor, s.minorAspects);
   gtk_switch_set_active(A.trueNode, s.trueNode);
+  gtk_drop_down_set_selected(A.textSize, std::clamp(A.prefs.textSize, 0, 3));
+  ApplyTextSize();
   gtk_switch_set_active(A.transits, A.prefs.transits);
   A.loading = false;
 
@@ -2053,7 +2082,32 @@ void Activate(GtkApplication *app, gpointer) {
     SetNow();
   }
   ShowPage(A.prefs.page);
+  if (const char *pg = g_getenv("ASTROLOG_STUDIO_SNAPSHOT_PAGE"))
+    ShowPage(atoi(pg));
   gtk_window_present(A.win);
+
+  // Developer aid: ASTROLOG_STUDIO_SNAPSHOT=out.png saves an image of the
+  // window once it has settled, then quits (used for README screenshots and
+  // visual checks, e.g. under GDK_BACKEND=broadway).
+  if (g_getenv("ASTROLOG_STUDIO_SNAPSHOT"))
+    g_timeout_add(2500, [](gpointer) -> gboolean {
+      GtkWidget *w = GTK_WIDGET(A.win);
+      GdkPaintable *pt = gtk_widget_paintable_new(w);
+      GtkSnapshot *snap = gtk_snapshot_new();
+      gdk_paintable_snapshot(pt, snap, gtk_widget_get_width(w),
+        gtk_widget_get_height(w));
+      GskRenderNode *node = gtk_snapshot_free_to_node(snap);
+      if (node) {
+        GskRenderer *r = gtk_native_get_renderer(GTK_NATIVE(w));
+        GdkTexture *tex = gsk_renderer_render_texture(r, node, nullptr);
+        gdk_texture_save_to_png(tex, g_getenv("ASTROLOG_STUDIO_SNAPSHOT"));
+        g_object_unref(tex);
+        gsk_render_node_unref(node);
+      }
+      g_object_unref(pt);
+      g_application_quit(G_APPLICATION(A.app));
+      return G_SOURCE_REMOVE;
+    }, nullptr);
 }
 
 std::string FindDataDir(const char *argv0) {
@@ -2101,8 +2155,11 @@ int main(int argc, char **argv) {
   }
   if (!err.empty()) g_printerr("astrolog-studio: %s\n", err.c_str());
 
+  // A snapshot run is a separate, throwaway instance: it must not hand off
+  // to an already running window or touch saved preferences.
+  bool snapshot = g_getenv("ASTROLOG_STUDIO_SNAPSHOT") != nullptr;
   A.app = gtk_application_new("org.astrolog.Studio",
-    G_APPLICATION_DEFAULT_FLAGS);
+    snapshot ? G_APPLICATION_NON_UNIQUE : G_APPLICATION_DEFAULT_FLAGS);
   g_signal_connect(A.app, "activate", G_CALLBACK(Activate), nullptr);
   int status = g_application_run(G_APPLICATION(A.app), argc, argv);
   g_object_unref(A.app);

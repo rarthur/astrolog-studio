@@ -32,6 +32,7 @@ struct Prefs {
   int sidebarWidth = 340;
   int wheelPanel = 340;    // Width of the placements/focus panel.
   int aspectPanel = 420;   // Width of the aspect list panel.
+  int textSize = 1;        // 0 small, 1 default, 2 large, 3 extra large.
 };
 
 Prefs LoadPrefs();

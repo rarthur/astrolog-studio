@@ -22,6 +22,8 @@ namespace theme {
 namespace {
 
 Palette g_pal;
+constexpr double kBaseTextScale = 1.12;
+double g_userScale = 1.0;
 GtkCssProvider *g_provider = nullptr;
 GFileMonitor *g_monitor = nullptr;
 GFileMonitor *g_hyprMonitor = nullptr;
@@ -600,7 +602,21 @@ calendar > grid > label.day-number:selected {
   Replace(css, "@RED@", Hex(p.red));
   Replace(css, "@RS@", std::to_string(std::max(0, p.radius - 3)));
   Replace(css, "@R@", std::to_string(p.radius));
-  return css;
+  // Scale every font size by the text size setting.
+  std::string out;
+  std::regex fs("font-size: ([0-9.]+)px");
+  auto begin = std::sregex_iterator(css.begin(), css.end(), fs);
+  size_t last = 0;
+  for (auto it = begin; it != std::sregex_iterator(); ++it) {
+    out += css.substr(last, it->position() - last);
+    char buf[48];
+    snprintf(buf, sizeof(buf), "font-size: %.1fpx",
+      std::stod((*it)[1].str()) * TextScale());
+    out += buf;
+    last = it->position() + it->length();
+  }
+  out += css.substr(last);
+  return out;
 }
 
 void Apply() {
@@ -631,6 +647,13 @@ void OnChanged(GFileMonitor *, GFile *, GFile *, GFileMonitorEvent ev,
 }  // namespace
 
 const Palette &Current() { return g_pal; }
+
+double TextScale() { return kBaseTextScale * g_userScale; }
+
+void SetTextScale(double userScale) {
+  g_userScale = std::clamp(userScale, 0.7, 1.6);
+  if (g_provider) Apply();
+}
 
 void Install(std::function<void()> onChange) {
   g_onChange = std::move(onChange);
