@@ -1,0 +1,10 @@
+# Build outputs
+build/
+*.o
+/astrolog
+/astrolog-studio
+
+# Not redistributed here (see README.md): third-party fonts with their own
+# licenses, and the original upstream source archive.
+font/
+ast80src.zip
