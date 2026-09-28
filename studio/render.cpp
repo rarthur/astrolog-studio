@@ -36,7 +36,8 @@ enum Anchor { kCenter, kLeft, kRight };
 // Draw a line of text centered (or anchored) at x, y. Returns its width.
 double Text(cairo_t *cr, const std::string &s, double x, double y,
   double size, const Rgb &color, double alpha = 1.0, bool glyph = false,
-  int weight = PANGO_WEIGHT_NORMAL, Anchor anchor = kCenter) {
+  int weight = PANGO_WEIGHT_NORMAL, Anchor anchor = kCenter,
+  const Rgb *halo = nullptr) {
   // The Part of Fortune symbol comes from a math font with a much larger
   // design size than the astrological glyphs; bring it in line.
   if (glyph && s.rfind("\u2297", 0) == 0) size *= 0.55;
@@ -61,6 +62,18 @@ double Text(cairo_t *cr, const std::string &s, double x, double y,
   double ox = anchor == kCenter ? x - w / 2 : (anchor == kLeft ? x : x - w);
   // Center vertically on the ink box for glyphs so symbols look balanced.
   double oy = glyph ? y - ink.y - ink.height / 2.0 : y - h / 2.0;
+  if (halo) {
+    // Outline in the background color so lines passing behind the text
+    // don't cut through it.
+    cairo_save(cr);
+    cairo_move_to(cr, ox, oy);
+    pango_cairo_layout_path(cr, layout);
+    theme::SetSource(cr, *halo, 0.9);
+    cairo_set_line_width(cr, std::max(2.5, size * 0.3));
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+    cairo_stroke(cr);
+    cairo_restore(cr);
+  }
   theme::SetSource(cr, color, alpha);
   cairo_move_to(cr, ox, oy);
   pango_cairo_show_layout(cr, layout);
@@ -147,7 +160,12 @@ void DrawBodies(cairo_t *cr, const Geo &g, const Chart &c, double rTick,
     lons.push_back(c.bodies[i].lon);
     idx.push_back((int)i);
   }
-  double minSep = (glyphSize * 1.25) / rGlyph * 180.0 / kPi;
+  // Each natal planet is a radial column: glyph, degrees, minutes, and a
+  // retrograde mark. Separate columns by whichever part needs the most
+  // angle: the glyph at its radius, or the degree label further in.
+  double minSep = (glyphSize * 1.2) / rGlyph * 180.0 / kPi;
+  if (!transit)
+    minSep = std::max(minSep, (glyphSize * 1.2) / rLabel * 180.0 / kPi);
   std::vector<double> disp = Spread(lons, minSep);
 
   for (size_t k = 0; k < idx.size(); k++) {
@@ -195,26 +213,42 @@ void DrawBodies(cairo_t *cr, const Geo &g, const Chart &c, double rTick,
     h.transit = transit;
     hits.push_back(h);
     if (transit) {
-      // The transit ring is narrow: only mark retrograde motion.
-      if (b.retro)
-        Text(cr, "℞", xg + glyphSize * 0.62, yg - glyphSize * 0.45,
-          glyphSize * 0.5, p.red, 1.0, true);
+      // The transit ring is narrow: mark retrograde motion just outside the
+      // glyph, on the same radial line.
+      if (b.retro) {
+        double xr, yr;
+        g.Pt(disp[k], rGlyph + glyphSize * 0.85, &xr, &yr);
+        Text(cr, "℞", xr, yr, glyphSize * 0.5, p.red, 1.0, true);
+      }
       continue;
     }
 
-    // Degree within sign, plus retrograde marker.
+    // An upright label block (degrees over minutes) sits inward from the
+    // glyph, so it reads the same all around the wheel. The retrograde mark
+    // goes further in, with clear space from both.
     double deg = Norm(b.lon);
     int d = (int)std::fmod(deg, 30.0);
     int m = (int)((std::fmod(deg, 30.0) - d) * 60.0);
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%d°%02d", d, m);
-    double xd, yd;
-    g.Pt(disp[k], rLabel, &xd, &yd);
-    Text(cr, buf, xd, yd, glyphSize * 0.5, hot ? p.fgBright : p.soft, 0.95);
-    if (b.retro) {
-      double xr, yr;
-      g.Pt(disp[k], rLabel - tickDir * glyphSize * 0.55, &xr, &yr);
-      Text(cr, "℞", xr, yr, glyphSize * 0.5, p.red, 1.0, true);
+    char dbuf[16], mbuf[16];
+    snprintf(dbuf, sizeof(dbuf), "%d°", d);
+    snprintf(mbuf, sizeof(mbuf), "%02d′", m);
+    double xb, yb;
+    g.Pt(disp[k], rLabel, &xb, &yb);
+    Text(cr, dbuf, xb, yb - glyphSize * 0.22, glyphSize * 0.48,
+      hot ? p.fgBright : p.fg, 1.0, false, PANGO_WEIGHT_SEMIBOLD, kCenter,
+      &p.bgDark);
+    double ym = yb + glyphSize * 0.26;
+    if (!b.retro) {
+      Text(cr, mbuf, xb, ym, glyphSize * 0.37, hot ? p.fgBright : p.soft,
+        1.0, false, PANGO_WEIGHT_NORMAL, kCenter, &p.bgDark);
+    } else {
+      // Retrograde: "12′ ℞" on the minutes line, inside this planet's own
+      // label block and well away from the glyph.
+      Text(cr, mbuf, xb + glyphSize * 0.1, ym, glyphSize * 0.37,
+        hot ? p.fgBright : p.soft, 1.0, false, PANGO_WEIGHT_NORMAL, kRight,
+        &p.bgDark);
+      Text(cr, "℞", xb + glyphSize * 0.36, ym, glyphSize * 0.44, p.red, 1.0,
+        true, PANGO_WEIGHT_NORMAL, kCenter, &p.bgDark);
     }
   }
 }
@@ -236,8 +270,8 @@ void DrawWheel(cairo_t *cr, int width, int height, const Chart &c,
   double rHi = base * 0.79;                   // House number ring.
   double rA = base * 0.40;                    // Aspect circle.
   double glyph = std::clamp(base * 0.095, 15.0, 36.0);
-  double rGlyph = rHi - glyph * 1.0;
-  double rLabel = rGlyph - glyph * 0.95;
+  double rGlyph = rHi - glyph * 0.95;
+  double rLabel = rGlyph - glyph * 1.15;  // Degree label block; ℞ inside.
 
   cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
 
